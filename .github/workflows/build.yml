@@ -1,52 +1,46 @@
-name: "Build"
+name: Build ESP32-S3 Firmware
 
 on:
-  push:
-    branches: [ "main" ]
-  pull_request:
-    branches: [ "main" ]
   workflow_dispatch:
-
-  
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
 
 jobs:
-  build:
-    name: Build ${{ matrix.board }}
-    strategy:
-      fail-fast: false
-      matrix:
-        board: [weact_studio_rp2040_16mb]
+  build-esp32s3:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          submodules: 'recursive'
+          submodules: recursive
 
-      - name: Install dependencies
+      - name: Build ESP32-S3 Binary
+        id: build
         run: |
-          sudo apt update
-          sudo apt install -y cmake gcc-arm-none-eabi libnewlib-arm-none-eabi libstdc++-arm-none-eabi-newlib
+          mkdir -p out
+          export ESP_PRODUCT="esp32s3"
+          export ESP_NAME="ESP32-S3"
 
-      - name: Clone and build pico-sdk
-        run: |
-          git clone https://github.com/raspberrypi/pico-sdk
-          cd pico-sdk
-          git checkout tags/2.1.1
-          git submodule update --init
+          # Clone ESP-IDF v5.5
+          git clone --recursive https://github.com/espressif/esp-idf.git -b v5.5 --depth=1 esp-idf-dir
+          cd esp-idf-dir
+          ./install.sh $ESP_PRODUCT
+          . ./export.sh
           cd ..
 
-      - name: Build firmware
-        env:
-          PICO_SDK_PATH: ${{ github.workspace }}/pico-sdk
-        run: |
-          mkdir -p build_ci
-          cd build_ci
-          cmake .. -DPICO_BOARD=${{ matrix.board }}
-          make -j$(nproc)
+          # Set target and build
+          idf.py set-target $ESP_PRODUCT
+          idf.py all
 
-      - name: Upload artifact
+          # Merge binaries into single flashable file
+          cd build
+          esptool.py --chip $ESP_NAME merge_bin -o pico_fido_esp32s3.bin @flash_args
+          cp pico_fido_esp32s3.bin ../out/
+
+      - name: Upload ESP32-S3 Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: pico_fido2_${{ matrix.board }}
-          path: build_ci/pico_fido2.uf2
+          name: pico_fido_esp32s3
+          path: out/pico_fido_esp32s3.bin
